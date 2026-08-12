@@ -340,11 +340,21 @@ func listTarStream(r io.Reader) ([]string, error) {
 }
 
 // extractTarEntry writes a single entry from the tar stream to disk.
-// It guards against path traversal (tar slip) via "../" in entry names.
+// It guards against path traversal (tar slip) via "../" in entry names, comparing
+// resolved absolute paths so it works correctly regardless of whether destDir is
+// relative (e.g. ".") or absolute.
 func extractTarEntry(header *tar.Header, tarReader *tar.Reader, destDir string) error {
 	targetPath := filepath.Join(destDir, header.Name)
 
-	if !strings.HasPrefix(targetPath, filepath.Clean(destDir)+string(os.PathSeparator)) {
+	absDest, err := filepath.Abs(destDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve destination path: %w", err)
+	}
+	absTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve entry path: %w", err)
+	}
+	if absTarget != absDest && !strings.HasPrefix(absTarget, absDest+string(os.PathSeparator)) {
 		return fmt.Errorf("illegal file path (tar slip attempt): %s", header.Name)
 	}
 

@@ -63,7 +63,7 @@ var rootCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		fmt.Println("extracted successfully to:", outputDir)
+		fmt.Println("Extracted Successfully")
 	},
 }
 

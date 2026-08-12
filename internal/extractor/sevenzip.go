@@ -20,7 +20,6 @@ func (s *SevenZipExtractor) Name() string {
 	return "7z"
 }
 
-// Detect checks for the 7z magic signature
 func (s *SevenZipExtractor) Detect(header []byte) bool {
 	if len(header) < len(sevenZipMagic) {
 		return false
@@ -33,7 +32,6 @@ func (s *SevenZipExtractor) Detect(header []byte) bool {
 	return true
 }
 
-// Extract unpacks the 7z archive at src into destDir
 func (s *SevenZipExtractor) Extract(src, destDir string) error {
 	reader, err := sevenzip.OpenReader(src)
 	if err != nil {
@@ -54,7 +52,6 @@ func (s *SevenZipExtractor) Extract(src, destDir string) error {
 	return nil
 }
 
-// List returns the names of all entries in the 7z archive without extracting them
 func (s *SevenZipExtractor) List(src string) ([]string, error) {
 	reader, err := sevenzip.OpenReader(src)
 	if err != nil {
@@ -70,11 +67,21 @@ func (s *SevenZipExtractor) List(src string) ([]string, error) {
 }
 
 // extractSevenZipEntry writes a single file/directory entry from the 7z archive to disk.
-// It guards against path traversal (7z slip) via "../" in entry names.
+// It guards against path traversal (7z slip) via "../" in entry names, comparing
+// resolved absolute paths so it works correctly regardless of whether destDir is
+// relative (e.g. ".") or absolute.
 func extractSevenZipEntry(file *sevenzip.File, destDir string) error {
 	targetPath := filepath.Join(destDir, file.Name)
 
-	if !strings.HasPrefix(targetPath, filepath.Clean(destDir)+string(os.PathSeparator)) {
+	absDest, err := filepath.Abs(destDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve destination path: %w", err)
+	}
+	absTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve entry path: %w", err)
+	}
+	if absTarget != absDest && !strings.HasPrefix(absTarget, absDest+string(os.PathSeparator)) {
 		return fmt.Errorf("illegal file path (7z slip attempt): %s", file.Name)
 	}
 

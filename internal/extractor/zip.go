@@ -67,10 +67,22 @@ func (z *ZipExtractor) List(src string) ([]string, error) {
 	return names, nil
 }
 
+// extractZipEntry writes a single file/directory entry from the zip archive to disk.
+// It guards against path traversal (zip slip) via "../" in entry names, comparing
+// resolved absolute paths so it works correctly regardless of whether destDir is
+// relative (e.g. ".") or absolute.
 func extractZipEntry(file *zip.File, destDir string) error {
 	targetPath := filepath.Join(destDir, file.Name)
 
-	if !strings.HasPrefix(targetPath, filepath.Clean(destDir)+string(os.PathSeparator)) {
+	absDest, err := filepath.Abs(destDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve destination path: %w", err)
+	}
+	absTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve entry path: %w", err)
+	}
+	if absTarget != absDest && !strings.HasPrefix(absTarget, absDest+string(os.PathSeparator)) {
 		return fmt.Errorf("illegal file path (zip slip attempt): %s", file.Name)
 	}
 
