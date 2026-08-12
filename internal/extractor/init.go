@@ -4,8 +4,8 @@ package extractor
 func init() {
 	Register(&ZipExtractor{})
 	Register(&TarExtractor{})
-	Register(&TarGzExtractor{})
-	Register(&TarBz2Extractor{})
-	Register(&TarXzExtractor{})
-	Register(&TarZstExtractor{})
+	Register(&GzExtractor{})
+	Register(&Bz2Extractor{})
+	Register(&XzExtractor{})
+	Register(&ZstExtractor{})
 }

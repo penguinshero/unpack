@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/bzip2"
 	"compress/gzip"
 	"fmt"
@@ -36,7 +37,6 @@ func (t *TarExtractor) Name() string {
 	return "tar"
 }
 
-// Detect checks for the "ustar" magic string at its fixed offset in the tar header
 func (t *TarExtractor) Detect(header []byte) bool {
 	if len(header) < tarMagicOffset+5 {
 		return false
@@ -54,26 +54,25 @@ func (t *TarExtractor) Extract(src, destDir string) error {
 	return extractTarStream(f, destDir)
 }
 
-// TarGzExtractor implements the Extractor interface for gzip-compressed tar archives (.tar.gz)
-type TarGzExtractor struct{}
+// GzExtractor handles gzip-compressed input. It detects whether the decompressed
+// stream is a tar archive or a single plain file, and extracts accordingly.
+type GzExtractor struct{}
 
-func (t *TarGzExtractor) Name() string {
-	return "tar.gz"
+func (g *GzExtractor) Name() string {
+	return "gzip"
 }
 
-// Detect checks for the gzip magic signature. Note: this is also true for plain .gz files,
-// but since unpack works on archives, we treat gzip streams as tar.gz candidates.
-func (t *TarGzExtractor) Detect(header []byte) bool {
+func (g *GzExtractor) Detect(header []byte) bool {
 	if len(header) < len(gzipMagic) {
 		return false
 	}
 	return header[0] == gzipMagic[0] && header[1] == gzipMagic[1]
 }
 
-func (t *TarGzExtractor) Extract(src, destDir string) error {
+func (g *GzExtractor) Extract(src, destDir string) error {
 	f, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("failed to open tar.gz archive: %w", err)
+		return fmt.Errorf("failed to open gzip file: %w", err)
 	}
 	defer f.Close()
 
@@ -83,66 +82,65 @@ func (t *TarGzExtractor) Extract(src, destDir string) error {
 	}
 	defer gzReader.Close()
 
-	return extractTarStream(gzReader, destDir)
+	return extractCompressedStream(gzReader, src, destDir, ".gz")
 }
 
-// TarBz2Extractor implements the Extractor interface for bzip2-compressed tar archives (.tar.bz2)
-type TarBz2Extractor struct{}
+// Bz2Extractor handles bzip2-compressed input, with the same tar-or-plain-file
+// auto-detection as GzExtractor.
+type Bz2Extractor struct{}
 
-func (t *TarBz2Extractor) Name() string {
-	return "tar.bz2"
+func (b *Bz2Extractor) Name() string {
+	return "bzip2"
 }
 
-// Detect checks for the bzip2 magic signature ("BZh")
-func (t *TarBz2Extractor) Detect(header []byte) bool {
+func (b *Bz2Extractor) Detect(header []byte) bool {
 	if len(header) < len(bzip2Magic) {
 		return false
 	}
-	for i, b := range bzip2Magic {
-		if header[i] != b {
+	for i, m := range bzip2Magic {
+		if header[i] != m {
 			return false
 		}
 	}
 	return true
 }
 
-func (t *TarBz2Extractor) Extract(src, destDir string) error {
+func (b *Bz2Extractor) Extract(src, destDir string) error {
 	f, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("failed to open tar.bz2 archive: %w", err)
+		return fmt.Errorf("failed to open bzip2 file: %w", err)
 	}
 	defer f.Close()
 
-	// compress/bzip2 only supports decompression (read-only), which is all we need here
 	bz2Reader := bzip2.NewReader(f)
 
-	return extractTarStream(bz2Reader, destDir)
+	return extractCompressedStream(bz2Reader, src, destDir, ".bz2")
 }
 
-// TarXzExtractor implements the Extractor interface for xz-compressed tar archives (.tar.xz)
-type TarXzExtractor struct{}
+// XzExtractor handles xz-compressed input, with the same tar-or-plain-file
+// auto-detection as GzExtractor.
+type XzExtractor struct{}
 
-func (t *TarXzExtractor) Name() string {
-	return "tar.xz"
+func (x *XzExtractor) Name() string {
+	return "xz"
 }
 
-// Detect checks for the xz magic signature
-func (t *TarXzExtractor) Detect(header []byte) bool {
+func (x *XzExtractor) Detect(header []byte) bool {
 	if len(header) < len(xzMagic) {
 		return false
 	}
-	for i, b := range xzMagic {
-		if header[i] != b {
+	for i, m := range xzMagic {
+		if header[i] != m {
 			return false
 		}
 	}
 	return true
 }
 
-func (t *TarXzExtractor) Extract(src, destDir string) error {
+func (x *XzExtractor) Extract(src, destDir string) error {
 	f, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("failed to open tar.xz archive: %w", err)
+		return fmt.Errorf("failed to open xz file: %w", err)
 	}
 	defer f.Close()
 
@@ -151,33 +149,33 @@ func (t *TarXzExtractor) Extract(src, destDir string) error {
 		return fmt.Errorf("failed to create xz reader: %w", err)
 	}
 
-	return extractTarStream(xzReader, destDir)
+	return extractCompressedStream(xzReader, src, destDir, ".xz")
 }
 
-// TarZstExtractor implements the Extractor interface for zstd-compressed tar archives (.tar.zst)
-type TarZstExtractor struct{}
+// ZstExtractor handles zstd-compressed input, with the same tar-or-plain-file
+// auto-detection as GzExtractor.
+type ZstExtractor struct{}
 
-func (t *TarZstExtractor) Name() string {
-	return "tar.zst"
+func (z *ZstExtractor) Name() string {
+	return "zstd"
 }
 
-// Detect checks for the zstd magic signature
-func (t *TarZstExtractor) Detect(header []byte) bool {
+func (z *ZstExtractor) Detect(header []byte) bool {
 	if len(header) < len(zstdMagic) {
 		return false
 	}
-	for i, b := range zstdMagic {
-		if header[i] != b {
+	for i, m := range zstdMagic {
+		if header[i] != m {
 			return false
 		}
 	}
 	return true
 }
 
-func (t *TarZstExtractor) Extract(src, destDir string) error {
+func (z *ZstExtractor) Extract(src, destDir string) error {
 	f, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("failed to open tar.zst archive: %w", err)
+		return fmt.Errorf("failed to open zstd file: %w", err)
 	}
 	defer f.Close()
 
@@ -187,11 +185,45 @@ func (t *TarZstExtractor) Extract(src, destDir string) error {
 	}
 	defer zstdReader.Close()
 
-	return extractTarStream(zstdReader, destDir)
+	return extractCompressedStream(zstdReader, src, destDir, ".zst")
+}
+
+// extractCompressedStream inspects the decompressed stream: if it looks like a
+// tar archive, it extracts entries normally. Otherwise it writes the decompressed
+// data as a single plain file (e.g. "notes.txt.gz" -> "notes.txt").
+func extractCompressedStream(r io.Reader, originalSrc, destDir, stripExt string) error {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create destination dir: %w", err)
+	}
+
+	// buffer the stream so we can peek at tar header bytes without consuming them
+	buffered := bufio.NewReaderSize(r, 512)
+
+	peek, err := buffered.Peek(tarMagicOffset + 5)
+	isTar := err == nil && string(peek[tarMagicOffset:tarMagicOffset+5]) == "ustar"
+
+	if isTar {
+		return extractTarStream(buffered, destDir)
+	}
+
+	// not a tar: treat as a single plain file, output name = source name minus stripExt
+	outName := strings.TrimSuffix(filepath.Base(originalSrc), stripExt)
+	outPath := filepath.Join(destDir, outName)
+
+	outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outFile.Close()
+
+	if _, err := io.Copy(outFile, buffered); err != nil {
+		return fmt.Errorf("failed to write decompressed data: %w", err)
+	}
+
+	return nil
 }
 
 // extractTarStream reads tar entries from r and writes them to destDir.
-// Shared by tar, tar.gz, tar.bz2, tar.xz, and tar.zst extraction paths.
 func extractTarStream(r io.Reader, destDir string) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create destination dir: %w", err)
