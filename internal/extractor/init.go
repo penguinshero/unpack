@@ -6,4 +6,5 @@ func init() {
 	Register(&TarExtractor{})
 	Register(&TarGzExtractor{})
 	Register(&TarBz2Extractor{})
+	Register(&TarXzExtractor{})
 }

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ulikunitz/xz"
 )
 
 // tarMagicOffset is where the "ustar" identifier lives inside a tar header block
@@ -19,6 +21,9 @@ var gzipMagic = []byte{0x1F, 0x8B}
 
 // bzip2Magic is the signature bytes at the start of a bzip2-compressed file ("BZh")
 var bzip2Magic = []byte{0x42, 0x5A, 0x68}
+
+// xzMagic is the signature bytes at the start of an xz-compressed file
+var xzMagic = []byte{0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00}
 
 // TarExtractor implements the Extractor interface for plain (uncompressed) tar archives
 type TarExtractor struct{}
@@ -110,8 +115,43 @@ func (t *TarBz2Extractor) Extract(src, destDir string) error {
 	return extractTarStream(bz2Reader, destDir)
 }
 
+// TarXzExtractor implements the Extractor interface for xz-compressed tar archives (.tar.xz)
+type TarXzExtractor struct{}
+
+func (t *TarXzExtractor) Name() string {
+	return "tar.xz"
+}
+
+// Detect checks for the xz magic signature
+func (t *TarXzExtractor) Detect(header []byte) bool {
+	if len(header) < len(xzMagic) {
+		return false
+	}
+	for i, b := range xzMagic {
+		if header[i] != b {
+			return false
+		}
+	}
+	return true
+}
+
+func (t *TarXzExtractor) Extract(src, destDir string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open tar.xz archive: %w", err)
+	}
+	defer f.Close()
+
+	xzReader, err := xz.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("failed to create xz reader: %w", err)
+	}
+
+	return extractTarStream(xzReader, destDir)
+}
+
 // extractTarStream reads tar entries from r and writes them to destDir.
-// Shared by tar, tar.gz, and tar.bz2 extraction paths.
+// Shared by tar, tar.gz, tar.bz2, and tar.xz extraction paths.
 func extractTarStream(r io.Reader, destDir string) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create destination dir: %w", err)
