@@ -16,12 +16,10 @@ var zipMagic = []byte{0x50, 0x4B, 0x03, 0x04}
 // ZipExtractor implements the Extractor interface for standard zip archives
 type ZipExtractor struct{}
 
-// Name returns the identifier used to register and look up this extractor
 func (z *ZipExtractor) Name() string {
 	return "zip"
 }
 
-// Detect checks whether the given header bytes match the zip magic signature
 func (z *ZipExtractor) Detect(header []byte) bool {
 	if len(header) < len(zipMagic) {
 		return false
@@ -34,7 +32,6 @@ func (z *ZipExtractor) Detect(header []byte) bool {
 	return true
 }
 
-// Extract unpacks the zip archive at src into destDir
 func (z *ZipExtractor) Extract(src, destDir string) error {
 	reader, err := zip.OpenReader(src)
 	if err != nil {
@@ -55,12 +52,24 @@ func (z *ZipExtractor) Extract(src, destDir string) error {
 	return nil
 }
 
-// extractZipEntry writes a single file/directory entry from the zip archive to disk.
-// It guards against zip slip (path traversal via "../" in entry names).
+// List returns the names of all entries in the zip archive without extracting them.
+func (z *ZipExtractor) List(src string) ([]string, error) {
+	reader, err := zip.OpenReader(src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open zip archive: %w", err)
+	}
+	defer reader.Close()
+
+	names := make([]string, 0, len(reader.File))
+	for _, file := range reader.File {
+		names = append(names, file.Name)
+	}
+	return names, nil
+}
+
 func extractZipEntry(file *zip.File, destDir string) error {
 	targetPath := filepath.Join(destDir, file.Name)
 
-	// zip slip protection: resolved path must stay inside destDir
 	if !strings.HasPrefix(targetPath, filepath.Clean(destDir)+string(os.PathSeparator)) {
 		return fmt.Errorf("illegal file path (zip slip attempt): %s", file.Name)
 	}

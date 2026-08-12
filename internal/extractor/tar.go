@@ -18,16 +18,9 @@ import (
 // tarMagicOffset is where the "ustar" identifier lives inside a tar header block
 const tarMagicOffset = 257
 
-// gzipMagic is the signature bytes at the start of a gzip-compressed file
 var gzipMagic = []byte{0x1F, 0x8B}
-
-// bzip2Magic is the signature bytes at the start of a bzip2-compressed file ("BZh")
 var bzip2Magic = []byte{0x42, 0x5A, 0x68}
-
-// xzMagic is the signature bytes at the start of an xz-compressed file
 var xzMagic = []byte{0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00}
-
-// zstdMagic is the signature bytes at the start of a zstd-compressed file
 var zstdMagic = []byte{0x28, 0xB5, 0x2F, 0xFD}
 
 // TarExtractor implements the Extractor interface for plain (uncompressed) tar archives
@@ -54,8 +47,17 @@ func (t *TarExtractor) Extract(src, destDir string) error {
 	return extractTarStream(f, destDir)
 }
 
-// GzExtractor handles gzip-compressed input. It detects whether the decompressed
-// stream is a tar archive or a single plain file, and extracts accordingly.
+func (t *TarExtractor) List(src string) ([]string, error) {
+	f, err := os.Open(src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open tar archive: %w", err)
+	}
+	defer f.Close()
+
+	return listTarStream(f)
+}
+
+// GzExtractor handles gzip-compressed input (both .tar.gz and standalone .gz)
 type GzExtractor struct{}
 
 func (g *GzExtractor) Name() string {
@@ -85,8 +87,23 @@ func (g *GzExtractor) Extract(src, destDir string) error {
 	return extractCompressedStream(gzReader, src, destDir, ".gz")
 }
 
-// Bz2Extractor handles bzip2-compressed input, with the same tar-or-plain-file
-// auto-detection as GzExtractor.
+func (g *GzExtractor) List(src string) ([]string, error) {
+	f, err := os.Open(src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open gzip file: %w", err)
+	}
+	defer f.Close()
+
+	gzReader, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gzReader.Close()
+
+	return listCompressedStream(gzReader, src, ".gz")
+}
+
+// Bz2Extractor handles bzip2-compressed input (both .tar.bz2 and standalone .bz2)
 type Bz2Extractor struct{}
 
 func (b *Bz2Extractor) Name() string {
@@ -117,8 +134,19 @@ func (b *Bz2Extractor) Extract(src, destDir string) error {
 	return extractCompressedStream(bz2Reader, src, destDir, ".bz2")
 }
 
-// XzExtractor handles xz-compressed input, with the same tar-or-plain-file
-// auto-detection as GzExtractor.
+func (b *Bz2Extractor) List(src string) ([]string, error) {
+	f, err := os.Open(src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open bzip2 file: %w", err)
+	}
+	defer f.Close()
+
+	bz2Reader := bzip2.NewReader(f)
+
+	return listCompressedStream(bz2Reader, src, ".bz2")
+}
+
+// XzExtractor handles xz-compressed input (both .tar.xz and standalone .xz)
 type XzExtractor struct{}
 
 func (x *XzExtractor) Name() string {
@@ -152,8 +180,22 @@ func (x *XzExtractor) Extract(src, destDir string) error {
 	return extractCompressedStream(xzReader, src, destDir, ".xz")
 }
 
-// ZstExtractor handles zstd-compressed input, with the same tar-or-plain-file
-// auto-detection as GzExtractor.
+func (x *XzExtractor) List(src string) ([]string, error) {
+	f, err := os.Open(src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open xz file: %w", err)
+	}
+	defer f.Close()
+
+	xzReader, err := xz.NewReader(f)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create xz reader: %w", err)
+	}
+
+	return listCompressedStream(xzReader, src, ".xz")
+}
+
+// ZstExtractor handles zstd-compressed input (both .tar.zst and standalone .zst)
 type ZstExtractor struct{}
 
 func (z *ZstExtractor) Name() string {
@@ -188,6 +230,22 @@ func (z *ZstExtractor) Extract(src, destDir string) error {
 	return extractCompressedStream(zstdReader, src, destDir, ".zst")
 }
 
+func (z *ZstExtractor) List(src string) ([]string, error) {
+	f, err := os.Open(src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open zstd file: %w", err)
+	}
+	defer f.Close()
+
+	zstdReader, err := zstd.NewReader(f)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zstd reader: %w", err)
+	}
+	defer zstdReader.Close()
+
+	return listCompressedStream(zstdReader, src, ".zst")
+}
+
 // extractCompressedStream inspects the decompressed stream: if it looks like a
 // tar archive, it extracts entries normally. Otherwise it writes the decompressed
 // data as a single plain file (e.g. "notes.txt.gz" -> "notes.txt").
@@ -196,7 +254,6 @@ func extractCompressedStream(r io.Reader, originalSrc, destDir, stripExt string)
 		return fmt.Errorf("failed to create destination dir: %w", err)
 	}
 
-	// buffer the stream so we can peek at tar header bytes without consuming them
 	buffered := bufio.NewReaderSize(r, 512)
 
 	peek, err := buffered.Peek(tarMagicOffset + 5)
@@ -206,7 +263,6 @@ func extractCompressedStream(r io.Reader, originalSrc, destDir, stripExt string)
 		return extractTarStream(buffered, destDir)
 	}
 
-	// not a tar: treat as a single plain file, output name = source name minus stripExt
 	outName := strings.TrimSuffix(filepath.Base(originalSrc), stripExt)
 	outPath := filepath.Join(destDir, outName)
 
@@ -221,6 +277,22 @@ func extractCompressedStream(r io.Reader, originalSrc, destDir, stripExt string)
 	}
 
 	return nil
+}
+
+// listCompressedStream mirrors extractCompressedStream's tar-or-plain-file detection,
+// but only returns entry names instead of writing to disk.
+func listCompressedStream(r io.Reader, originalSrc, stripExt string) ([]string, error) {
+	buffered := bufio.NewReaderSize(r, 512)
+
+	peek, err := buffered.Peek(tarMagicOffset + 5)
+	isTar := err == nil && string(peek[tarMagicOffset:tarMagicOffset+5]) == "ustar"
+
+	if isTar {
+		return listTarStream(buffered)
+	}
+
+	outName := strings.TrimSuffix(filepath.Base(originalSrc), stripExt)
+	return []string{outName}, nil
 }
 
 // extractTarStream reads tar entries from r and writes them to destDir.
@@ -246,6 +318,25 @@ func extractTarStream(r io.Reader, destDir string) error {
 	}
 
 	return nil
+}
+
+// listTarStream reads tar entry names from r without writing anything to disk.
+func listTarStream(r io.Reader) ([]string, error) {
+	tarReader := tar.NewReader(r)
+	var names []string
+
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tar entry: %w", err)
+		}
+		names = append(names, header.Name)
+	}
+
+	return names, nil
 }
 
 // extractTarEntry writes a single entry from the tar stream to disk.
@@ -275,7 +366,6 @@ func extractTarEntry(header *tar.Header, tarReader *tar.Reader, destDir string) 
 		return err
 
 	default:
-		// symlinks, devices, etc. are skipped for now
 		return nil
 	}
 }

@@ -18,6 +18,7 @@ universal extractor for linux
 var (
 	outputDir string
 	verbose   bool
+	listOnly  bool
 )
 
 // rootCmd is the base command executed when no subcommand is given
@@ -45,6 +46,18 @@ var rootCmd = &cobra.Command{
 			fmt.Printf("detected format: %s\n", ext.Name())
 		}
 
+		if listOnly {
+			names, err := ext.List(src)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "listing failed:", err)
+				os.Exit(1)
+			}
+			for _, name := range names {
+				fmt.Println(name)
+			}
+			return
+		}
+
 		if err := ext.Extract(src, outputDir); err != nil {
 			fmt.Fprintln(os.Stderr, "extraction failed:", err)
 			os.Exit(1)
@@ -57,6 +70,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory for extracted files")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
+	rootCmd.Flags().BoolVarP(&listOnly, "list", "l", false, "list archive contents without extracting")
 }
 
 func main() {
