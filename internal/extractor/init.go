@@ -9,4 +9,5 @@ func init() {
 	Register(&XzExtractor{})
 	Register(&ZstExtractor{})
 	Register(&SevenZipExtractor{})
+	Register(&RarExtractor{})
 }
