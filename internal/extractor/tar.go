@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"archive/tar"
+	"compress/bzip2"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -15,6 +16,9 @@ const tarMagicOffset = 257
 
 // gzipMagic is the signature bytes at the start of a gzip-compressed file
 var gzipMagic = []byte{0x1F, 0x8B}
+
+// bzip2Magic is the signature bytes at the start of a bzip2-compressed file ("BZh")
+var bzip2Magic = []byte{0x42, 0x5A, 0x68}
 
 // TarExtractor implements the Extractor interface for plain (uncompressed) tar archives
 type TarExtractor struct{}
@@ -73,8 +77,41 @@ func (t *TarGzExtractor) Extract(src, destDir string) error {
 	return extractTarStream(gzReader, destDir)
 }
 
+// TarBz2Extractor implements the Extractor interface for bzip2-compressed tar archives (.tar.bz2)
+type TarBz2Extractor struct{}
+
+func (t *TarBz2Extractor) Name() string {
+	return "tar.bz2"
+}
+
+// Detect checks for the bzip2 magic signature ("BZh")
+func (t *TarBz2Extractor) Detect(header []byte) bool {
+	if len(header) < len(bzip2Magic) {
+		return false
+	}
+	for i, b := range bzip2Magic {
+		if header[i] != b {
+			return false
+		}
+	}
+	return true
+}
+
+func (t *TarBz2Extractor) Extract(src, destDir string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open tar.bz2 archive: %w", err)
+	}
+	defer f.Close()
+
+	// compress/bzip2 only supports decompression (read-only), which is all we need here
+	bz2Reader := bzip2.NewReader(f)
+
+	return extractTarStream(bz2Reader, destDir)
+}
+
 // extractTarStream reads tar entries from r and writes them to destDir.
-// Shared by both plain tar and tar.gz extraction paths.
+// Shared by tar, tar.gz, and tar.bz2 extraction paths.
 func extractTarStream(r io.Reader, destDir string) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create destination dir: %w", err)

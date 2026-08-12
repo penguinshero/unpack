@@ -5,4 +5,5 @@ func init() {
 	Register(&ZipExtractor{})
 	Register(&TarExtractor{})
 	Register(&TarGzExtractor{})
+	Register(&TarBz2Extractor{})
 }
