@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 )
 
@@ -24,6 +25,9 @@ var bzip2Magic = []byte{0x42, 0x5A, 0x68}
 
 // xzMagic is the signature bytes at the start of an xz-compressed file
 var xzMagic = []byte{0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00}
+
+// zstdMagic is the signature bytes at the start of a zstd-compressed file
+var zstdMagic = []byte{0x28, 0xB5, 0x2F, 0xFD}
 
 // TarExtractor implements the Extractor interface for plain (uncompressed) tar archives
 type TarExtractor struct{}
@@ -150,8 +154,44 @@ func (t *TarXzExtractor) Extract(src, destDir string) error {
 	return extractTarStream(xzReader, destDir)
 }
 
+// TarZstExtractor implements the Extractor interface for zstd-compressed tar archives (.tar.zst)
+type TarZstExtractor struct{}
+
+func (t *TarZstExtractor) Name() string {
+	return "tar.zst"
+}
+
+// Detect checks for the zstd magic signature
+func (t *TarZstExtractor) Detect(header []byte) bool {
+	if len(header) < len(zstdMagic) {
+		return false
+	}
+	for i, b := range zstdMagic {
+		if header[i] != b {
+			return false
+		}
+	}
+	return true
+}
+
+func (t *TarZstExtractor) Extract(src, destDir string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open tar.zst archive: %w", err)
+	}
+	defer f.Close()
+
+	zstdReader, err := zstd.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("failed to create zstd reader: %w", err)
+	}
+	defer zstdReader.Close()
+
+	return extractTarStream(zstdReader, destDir)
+}
+
 // extractTarStream reads tar entries from r and writes them to destDir.
-// Shared by tar, tar.gz, tar.bz2, and tar.xz extraction paths.
+// Shared by tar, tar.gz, tar.bz2, tar.xz, and tar.zst extraction paths.
 func extractTarStream(r io.Reader, destDir string) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create destination dir: %w", err)

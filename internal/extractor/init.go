@@ -7,4 +7,5 @@ func init() {
 	Register(&TarGzExtractor{})
 	Register(&TarBz2Extractor{})
 	Register(&TarXzExtractor{})
+	Register(&TarZstExtractor{})
 }
