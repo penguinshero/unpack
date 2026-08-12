@@ -5,6 +5,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/penguinshero/unpack/internal/detect"
+	"github.com/penguinshero/unpack/internal/extractor"
 )
 
 // banner is shown in the help/usage output
@@ -24,9 +27,30 @@ var rootCmd = &cobra.Command{
 	Long:  banner + "\nDetects archive type by file content (magic bytes), not extension, and extracts it.",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("target file:", args[0])
-		fmt.Println("output dir:", outputDir)
-		// TODO: look up the matching extractor from the registry and run Extract()
+		src := args[0]
+
+		header, err := detect.ReadHeader(src, 265)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error reading file:", err)
+			os.Exit(1)
+		}
+
+		ext := extractor.DetectExtractor(header)
+		if ext == nil {
+			fmt.Fprintln(os.Stderr, "unsupported or unrecognized archive format")
+			os.Exit(1)
+		}
+
+		if verbose {
+			fmt.Printf("detected format: %s\n", ext.Name())
+		}
+
+		if err := ext.Extract(src, outputDir); err != nil {
+			fmt.Fprintln(os.Stderr, "extraction failed:", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("extracted successfully to:", outputDir)
 	},
 }
 
