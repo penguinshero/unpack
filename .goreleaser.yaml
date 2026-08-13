@@ -28,6 +28,27 @@ archives:
       - README.md
       - LICENSE
 
+nfpms:
+  - id: unpack-deb
+    package_name: unpack
+    vendor: penguinshero
+    homepage: https://github.com/penguinshero/unpack
+    maintainer: Muhammad Shawon <your-email@example.com>
+    description: Universal archive extractor for Linux — detects format by content, not extension.
+    license: MIT
+    formats:
+      - deb
+    # only build .deb for linux builds, not darwin
+    builds:
+      - unpack
+    recommends:
+      - unrar
+    contents:
+      - src: README.md
+        dst: /usr/share/doc/unpack/README.md
+      - src: LICENSE
+        dst: /usr/share/doc/unpack/LICENSE
+
 checksum:
   name_template: "checksums.txt"
 
