@@ -2,6 +2,7 @@
 
 **A universal archive extractor for Linux.**
 Detects archive type by file content (magic bytes), not by extension — so it works even on renamed or misnamed files.
+![CI](https://github.com/penguinshero/unpack/actions/workflows/ci.yml/badge.svg)
 
 ## Supported formats
 
